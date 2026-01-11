@@ -128,12 +128,13 @@
                           (while (not done)
                             (setq choice (hanfix--read-char '(?y ?n ?e ?i ?q ??)))
                             (cond
-                             ;; '?' 토글 로직: 분리된 함수들 호출
                              ((eq choice ??)
                               (hanfix--update-help-buffer)
-                              (hanfix--read-char '(??))
-                              (hanfix--update-info-buffer input output help))
-                             ;; 기능 수행 및 루프 종료
+                              (if (eq (hanfix--read-char '(?q ??)) ?q)
+                                  (progn
+                                    (setq done t)
+                                    (setq stop-p t)
+                                (hanfix--update-info-buffer input output help))))
                              (t (setq done t)
                                 (cond
                                  ((eq choice ?y)
@@ -229,8 +230,9 @@
           (cond
            ((eq choice ??)
             (hanfix--update-help-buffer)
-            (hanfix--read-char '(??))
-            (hanfix--update-info-buffer "Hello" "World" "Hello world is not help."))
+            (if (eq (hanfix--read-char '(?q ??)) ?q)
+                (setq done t)
+              (hanfix--update-info-buffer "Hello" "World" "Hello world is not help.")))
            ((eq choice ?q)
             (setq done t))
            (t (message "%c is selected" choice)))))
