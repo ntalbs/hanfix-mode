@@ -51,6 +51,37 @@
       (delete-windows-on buf)
       (kill-buffer buf))))
 
+(defun hanfix--read-choice-in-buffer ()
+  "정보 버퍼 안에서 커서를 보여주고, 미니버퍼에 C-c h h... 잔상이 남지 않게 합니다."
+  (let ((info-window (get-buffer-window "*Hanfix*"))
+        (echo-keystrokes 0) ; 미니버퍼에 키 입력이 즉시 뜨는 것을 방지
+        (char nil))
+    (if (not info-window)
+        (read-char-choice "[y/n/e/i/q] 선택: " '(?y ?n ?e ?i ?q))
+
+      (with-selected-window info-window
+        (let ((inhibit-read-only t)
+              (cursor-in-non-selected-windows t))
+          (goto-char (point-max))
+
+          ;; [가장 중요] 기존에 입력된 'C-c h h' 기록을 지워버립니다.
+          ;; 이제부터 입력되는 n, y 등은 완전히 새로운 입력으로 취급됩니다.
+          (clear-this-command-keys t)
+
+          (redisplay)
+
+          ;; 입력을 받습니다.
+          (setq char (read-event nil))
+
+          ;; 유효한 키가 올 때까지 반복
+          (while (not (memq char '(?y ?n ?e ?i ?q)))
+            (clear-this-command-keys t)
+            (message "잘못된 입력: %c (y/n/e/i/q 중 선택)" char)
+            (setq char (read-event nil)))
+
+          (message "") ; 에코 영역(미니버퍼) 깨끗하게 정리
+          char)))))
+
 (defun hanfix--update-info-buffer (input output help)
   (with-current-buffer (get-buffer-create "*Hanfix*")
     (let ((inhibit-read-only t))
@@ -60,8 +91,9 @@
       (insert (propertize "[O] " 'face '(:foreground "forest green")) output "\n")
       (insert "\n" (propertize "── [상세 설명] ────────────────────\n\n" 'face 'shadow))
       (insert help)
-      ;; 안내 메시지에서 a 대신 i로 표시
-      (insert (propertize "\n\n(y:변경, n:넘기기, e:직접수정, i:무시추가, q:중단)" 'face 'shadow))
+      (insert "\n\n" (propertize "  >> 선택: [y/n/e/i/q] " 'face 'bold-italic))
+      ;; 여기에 커서가 위치하게 됩니다.
+      (set-buffer-modified-p nil)
       (read-only-mode 1)))
   (display-buffer "*Hanfix*" '((display-buffer-at-bottom) (window-height . 12))))
 
@@ -76,16 +108,13 @@
                   (output (cdr (assoc 'output err)))
                   (help (cdr (assoc 'helpText err))))
               (when (search-forward (regexp-quote input) end t)
-                (let ((m-beg (match-beginning 0))
-                      (m-end (match-end 0))
-                      (m-data (match-data))
+                (let ((m-data (match-data))
                       (ov (make-overlay (match-beginning 0) (match-end 0))))
                   (overlay-put ov 'face 'hanfix-error-face)
                   (recenter 10)
                   (hanfix--update-info-buffer input output help)
                   (unwind-protect
-                      ;; 단축키 입력을 (y/n/e/i/q)로 변경
-                      (let ((choice (read-char-choice (format "[%s -> %s]? (y/n/e/i/q): " input output) '(?y ?n ?e ?i ?q))))
+                      (let ((choice (hanfix--read-choice-in-buffer)))
                         (cond
                          ((eq choice ?y) (set-match-data m-data) (replace-match output) (undo-boundary))
                          ((eq choice ?e) (let ((new (read-string "수정: " output))) (set-match-data m-data) (replace-match new)) (undo-boundary))
