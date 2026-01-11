@@ -63,10 +63,24 @@
       (insert (propertize "[O] " 'face '(:foreground "forest green")) output "\n")
       (insert "\n" (propertize "── [상세 설명] ────────────────────\n\n" 'face 'shadow))
       (insert help)
-      ;; 안내 메시지에서 a 대신 i로 표시
-      (insert (propertize "\n\n(y:변경, n:넘기기, e:직접수정, i:무시추가, q:중단)" 'face 'shadow))
       (read-only-mode 1)))
   (display-buffer "*Hanfix*" '((display-buffer-at-bottom) (window-height . 12))))
+
+(defun hanfix--update-help-buffer ()
+  "정보 버퍼에 조작법 도움말을 표시합니다."
+  (with-current-buffer (get-buffer-create "*Hanfix*")
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert (propertize "── [도움말: 조작 방법] ────────────────\n\n" 'face 'shadow))
+      (insert (propertize " y " 'face 'bold) "(yes)   : 제안된 단어로 교체\n")
+      (insert (propertize " n " 'face 'bold) "(no)    : 교정하지 않고 다음으로 이동\n")
+      (insert (propertize " e " 'face 'bold) "(edit)  : 직접 수정할 내용 입력\n")
+      (insert (propertize " i " 'face 'bold) "(ignore): 무시 목록에 추가 및 저장\n")
+      (insert (propertize " q " 'face 'bold) "(quit)  : 검사 중단\n")
+      (insert (propertize " ? " 'face 'bold) "(help)  : 교정 정보 보기로 돌아가기\n\n")
+      (insert (propertize "──────────────────────────────────" 'face 'shadow))
+      (set-buffer-modified-p nil)
+      (read-only-mode 1))))
 
 (defun hanfix--fix-errors (main-buffer start end errors)
   (let ((stop-p nil))
@@ -83,18 +97,34 @@
                       (ov (make-overlay (match-beginning 0) (match-end 0))))
                   (overlay-put ov 'face 'hanfix-face-error)
                   (recenter 10)
-                  (hanfix--update-info-buffer input output help)
+                  (hanfix--update-info-buffer input output help) ; 기본 정보 표시
+
                   (unwind-protect
-                      ;; 단축키 입력을 (y/n/e/i/q)로 변경
-                      (let ((choice (read-char-choice (format "[%s -> %s]? (y/n/e/i/q): " input output) '(?y ?n ?e ?i ?q))))
-                        (cond
-                         ((eq choice ?y) (set-match-data m-data) (replace-match output) (undo-boundary))
-                         ((eq choice ?e) (let ((new (read-string "수정: " output))) (set-match-data m-data) (replace-match new)) (undo-boundary))
-                         ((eq choice ?i) ;; 기존 ?a 대신 ?i 사용
-                          (add-to-list 'hanfix-ignored-words input)
-                          (customize-save-variable 'hanfix-ignored-words hanfix-ignored-words)
-                          (message "단어 '%s'를 무시 목록에 추가했습니다." input))
-                         ((eq choice ?q) (setq stop-p t))))
+                      (let ((done nil)
+                            (showing-help nil)
+                            (choice nil))
+                        (while (not done)
+                          (setq choice (read-char-choice
+                                        (format "[%s -> %s]? (y/n/e/i/q/?) " input output)
+                                        '(?y ?n ?e ?i ?q ??)))
+                          (cond
+                           ;; '?' 토글 로직: 분리된 함수들 호출
+                           ((eq choice ??)
+                            (if showing-help
+                                (hanfix--update-info-buffer input output help)
+                              (hanfix--update-help-buffer))
+                            (setq showing-help (not showing-help)))
+
+                           ;; 기능 수행 및 루프 종료
+                           (t (setq done t)
+                              (cond
+                               ((eq choice ?y) (set-match-data m-data) (replace-match output) (undo-boundary))
+                               ((eq choice ?e) (let ((new (read-string "수정: " output))) (set-match-data m-data) (replace-match new)) (undo-boundary))
+                               ((eq choice ?i)
+                                (add-to-list 'hanfix-ignored-words input)
+                                (customize-save-variable 'hanfix-ignored-words hanfix-ignored-words)
+                                (message "단어 '%s'를 무시 목록에 추가했습니다." input))
+                               ((eq choice ?q) (setq stop-p t)))))))
                     (delete-overlay ov)))))))))
     stop-p))
 
