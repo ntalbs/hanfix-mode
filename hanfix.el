@@ -225,18 +225,19 @@
   "For test only."
   (interactive)
   (hanfix--update-info-buffer "Hello" "World" "Hello world is not help.")
-  (let ((done nil)
-        (choice nil))
-    (while (not done)
-      (setq choice (hanfix--read-char '(?y ?n ?e ?i ?q ??)))
-      (cond
-       ((eq choice ??)
-        (hanfix--update-help-buffer)
-        (hanfix--read-char '(??))
-        (hanfix--update-info-buffer "Hello" "World" "Hello world is not help."))
-       ((eq choice ?q)
-        (setq done t))
-       (t (message "%c is selected" choice))))
+  (unwind-protect
+      (let ((done nil)
+            (choice nil))
+        (while (not done)
+          (setq choice (hanfix--read-char '(?y ?n ?e ?i ?q ??)))
+          (cond
+           ((eq choice ??)
+            (hanfix--update-help-buffer)
+            (hanfix--read-char '(??))
+            (hanfix--update-info-buffer "Hello" "World" "Hello world is not help."))
+           ((eq choice ?q)
+            (setq done t))
+           (t (message "%c is selected" choice)))))
     (hanfix--cleanup-ui)))
 
 (defvar hanfix-mode-map
