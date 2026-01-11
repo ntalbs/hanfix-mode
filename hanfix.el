@@ -24,11 +24,6 @@
   :type 'file
   :group 'hanfix)
 
-(defcustom hanfix-max-length 1000
-  "한 번에 검사할 최대 글자수."
-  :type 'integer
-  :group 'hanfix)
-
 (defcustom hanfix-ignored-words '()
   "맞춤법 검사 시 무시할 단어 목록."
   :type '(repeat string)
@@ -48,42 +43,67 @@
 
 ;;; --- 내부 유틸리티 ---
 
+(defconst hanfix-buffer "*Hanfix*"
+  "Hanfix에서 사용할 버퍼 이름.")
+
+(defconst hanfix-max-length 1000
+  "Hanfix CLI로 보낼 문자열 최대 길이.")
+
+(defun hanfix--check-executable ()
+  "Hanfix 실행 파일이 있는지 확인."
+  (if (executable-find hanfix-path)
+      t
+    (warn "hanfix 실행 파일을 찾을 수 없습니다. '%s' 경로를 확인하거나 CLI 도구를 설치하세요." hanfix-path)
+    nil))
+
+(defun hanfix--read-char (chars)
+  (let ((ch nil))
+    (while (not (memq ch chars))
+      (clear-this-command-keys)
+      (setq ch (read-char-exclusive)))
+    ch))
+
 (defun hanfix--cleanup-ui ()
-  (let ((buf (get-buffer "*Hanfix*")))
+  (let ((buf (get-buffer hanfix-buffer)))
     (when (buffer-live-p buf)
       (delete-windows-on buf)
       (kill-buffer buf))))
 
 (defun hanfix--update-info-buffer (input output help)
-  (with-current-buffer (get-buffer-create "*Hanfix*")
+  (with-current-buffer (get-buffer-create hanfix-buffer)
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert (propertize "── [교정 제안] ────────────────────\n\n" 'face 'shadow))
       (insert (propertize "[X] " 'face '(:foreground "red")) input "\n")
       (insert (propertize "[O] " 'face '(:foreground "forest green")) output "\n")
-      (insert "\n" (propertize "── [상세 설명] ────────────────────\n\n" 'face 'shadow))
+      (insert "\n")
+      (insert (propertize "── [상세 설명] ────────────────────\n\n" 'face 'shadow))
       (insert help)
+      ;;
+      (insert (format "\n [%s -> %s]? (y/n/e/i/q/?) " input output))
+      ;;
       (read-only-mode 1)))
-  (display-buffer "*Hanfix*" '((display-buffer-at-bottom) (window-height . 12))))
+  (pop-to-buffer hanfix-buffer '((display-buffer-at-bottom) (window-height . 15))))
 
 (defun hanfix--update-help-buffer ()
   "정보 버퍼에 조작법 도움말을 표시합니다."
-  (with-current-buffer (get-buffer-create "*Hanfix*")
+  (with-current-buffer (get-buffer-create hanfix-buffer)
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert (propertize "── [도움말: 조작 방법] ────────────────\n\n" 'face 'shadow))
+      (insert (propertize "── [도움말] ──────────────────────\n\n" 'face 'shadow))
       (insert (propertize " y " 'face 'bold) "(yes)   : 제안된 단어로 교체\n")
       (insert (propertize " n " 'face 'bold) "(no)    : 교정하지 않고 다음으로 이동\n")
       (insert (propertize " e " 'face 'bold) "(edit)  : 직접 수정할 내용 입력\n")
       (insert (propertize " i " 'face 'bold) "(ignore): 무시 목록에 추가 및 저장\n")
       (insert (propertize " q " 'face 'bold) "(quit)  : 검사 중단\n")
       (insert (propertize " ? " 'face 'bold) "(help)  : 교정 정보 보기로 돌아가기\n\n")
-      (insert (propertize "──────────────────────────────────" 'face 'shadow))
+      (insert (propertize "──────────────────────────────────\n\n" 'face 'shadow))
       (set-buffer-modified-p nil)
       (read-only-mode 1))))
 
 (defun hanfix--fix-errors (main-buffer start end errors)
-  (let ((stop-p nil))
+  (let ((stop-p nil)
+        (search-from start))
     (with-current-buffer main-buffer
       (save-excursion
         (goto-char start)
@@ -92,40 +112,51 @@
             (let ((input (cdr (assoc 'input err)))
                   (output (cdr (assoc 'output err)))
                   (help (cdr (assoc 'helpText err))))
-              (when (search-forward (regexp-quote input) end t)
-                (let ((m-data (match-data))
-                      (ov (make-overlay (match-beginning 0) (match-end 0))))
-                  (overlay-put ov 'face 'hanfix-face-error)
-                  (recenter 10)
-                  (hanfix--update-info-buffer input output help) ; 기본 정보 표시
+              (with-current-buffer main-buffer
+                (goto-char search-from)
+                (when (search-forward input end t)
+                  (setq search-from (point))
 
-                  (unwind-protect
-                      (let ((done nil)
-                            (showing-help nil)
-                            (choice nil))
-                        (while (not done)
-                          (setq choice (read-char-choice
-                                        (format "[%s -> %s]? (y/n/e/i/q/?) " input output)
-                                        '(?y ?n ?e ?i ?q ??)))
-                          (cond
-                           ;; '?' 토글 로직: 분리된 함수들 호출
-                           ((eq choice ??)
-                            (if showing-help
-                                (hanfix--update-info-buffer input output help)
-                              (hanfix--update-help-buffer))
-                            (setq showing-help (not showing-help)))
+                  (let ((m-data (match-data))
+                        (ov (make-overlay (match-beginning 0) (match-end 0))))
+                    (overlay-put ov 'face 'hanfix-face-error)
 
-                           ;; 기능 수행 및 루프 종료
-                           (t (setq done t)
-                              (cond
-                               ((eq choice ?y) (set-match-data m-data) (replace-match output) (undo-boundary))
-                               ((eq choice ?e) (let ((new (read-string "수정: " output))) (set-match-data m-data) (replace-match new)) (undo-boundary))
-                               ((eq choice ?i)
-                                (add-to-list 'hanfix-ignored-words input)
-                                (customize-save-variable 'hanfix-ignored-words hanfix-ignored-words)
-                                (message "단어 '%s'를 무시 목록에 추가했습니다." input))
-                               ((eq choice ?q) (setq stop-p t)))))))
-                    (delete-overlay ov)))))))))
+                    (with-selected-window (get-buffer-window main-buffer)
+                      (recenter 10))
+
+                    (hanfix--update-info-buffer input output help)
+
+                    (unwind-protect
+                        (let ((done nil)
+                              (choice nil))
+                          (while (not done)
+                            (setq choice (hanfix--read-char '(?y ?n ?e ?i ?q ??)))
+                            (cond
+                             ;; '?' 토글 로직: 분리된 함수들 호출
+                             ((eq choice ??)
+                              (hanfix--update-help-buffer)
+                              (hanfix--read-char '(??))
+                              (hanfix--update-info-buffer input output help))
+                             ;; 기능 수행 및 루프 종료
+                             (t (setq done t)
+                                (cond
+                                 ((eq choice ?y)
+                                  (with-current-buffer main-buffer
+                                      (set-match-data m-data)
+                                      (replace-match output)
+                                      (undo-boundary)))
+                                 ((eq choice ?e)
+                                  (let ((new (read-string "수정: " output)))
+                                    (with-current-buffer main-buffer
+                                        (set-match-data m-data)
+                                        (replace-match new)
+                                        (undo-boundary))))
+                                 ((eq choice ?i)
+                                  (add-to-list 'hanfix-ignored-words input)
+                                  (customize-save-variable 'hanfix-ignored-words hanfix-ignored-words)
+                                  (message "단어 '%s'를 무시 목록에 추가했습니다." input))
+                                 ((eq choice ?q) (setq stop-p t)))))))
+                    (delete-overlay ov))))))))))
     stop-p))
 
 (defun hanfix--process-region (start end)
@@ -168,16 +199,9 @@
     (hanfix--cleanup-ui)
     (message "맞춤법 검사가 완료되었습니다.")))
 
-(defun hanfix--check-executable ()
-  "Hanfix 실행 파일이 있는지 확인."
-  (if (executable-find hanfix-path)
-      t
-    (warn "hanfix 실행 파일을 찾을 수 없습니다. '%s' 경로를 확인하거나 CLI 도구를 설치하세요." hanfix-path)
-    nil))
-
 ;;; --- 사용자 명령어 ---
 
-(defun hanfix-check ()
+(defun hanfix-check-region ()
   "현재 영역 또는 단락 하나만 검사합니다."
   (interactive)
   (let* ((use-region (use-region-p))
@@ -197,11 +221,30 @@
   (interactive)
   (hanfix--run-loop (point)))
 
+(defun hanfix-check-dummy ()
+  "For test only."
+  (interactive)
+  (hanfix--update-info-buffer "Hello" "World" "Hello world is not help.")
+  (let ((done nil)
+        (choice nil))
+    (while (not done)
+      (setq choice (hanfix--read-char '(?y ?n ?e ?i ?q ??)))
+      (cond
+       ((eq choice ??)
+        (hanfix--update-help-buffer)
+        (hanfix--read-char '(??))
+        (hanfix--update-info-buffer "Hello" "World" "Hello world is not help."))
+       ((eq choice ?q)
+        (setq done t))
+       (t (message "%c is selected" choice))))
+    (hanfix--cleanup-ui)))
+
 (defvar hanfix-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c h c") 'hanfix-check)
+    (define-key map (kbd "C-c h c") 'hanfix-check-region)
     (define-key map (kbd "C-c h a") 'hanfix-check-all)
     (define-key map (kbd "C-c h h") 'hanfix-check-from-here)
+    (define-key map (kbd "C-c h d") 'hanfix-check-dummy)
     map)
   "Keymap for `hanfix-mode'.")
 
