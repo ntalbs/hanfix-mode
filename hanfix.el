@@ -21,11 +21,13 @@
 
 (defcustom hanfix-path "hanfix"
   "Hanfix 실행 파일 경로."
-  :type 'file :group 'hanfix)
+  :type 'file
+  :group 'hanfix)
 
 (defcustom hanfix-max-length 1000
   "한 번에 검사할 최대 글자수."
-  :type 'integer :group 'hanfix)
+  :type 'integer
+  :group 'hanfix)
 
 (defcustom hanfix-ignored-words '()
   "맞춤법 검사 시 무시할 단어 목록."
@@ -34,14 +36,15 @@
 
 ;;; --- 스타일 ---
 
-(defface hanfix-section-face
-  '((((class color) (min-colors 88) (background dark)) :background "gray20" :extend t)
-    (((class color) (min-colors 88) (background light)) :background "gray90" :extend t))
-  "검사 중인 단락 강조.")
+(defface hanfix-face-section
+  '((t :background "gray90" :extend t))
+  "검사 중인 단락 강조."
+  :group 'hanfix)
 
-(defface hanfix-error-face
+(defface hanfix-face-error
   '((t :background "salmon" :foreground "white" :weight bold))
-  "오류 단어 강조.")
+  "오류 단어 강조."
+  :group 'hanfix)
 
 ;;; --- 내부 유틸리티 ---
 
@@ -76,11 +79,9 @@
                   (output (cdr (assoc 'output err)))
                   (help (cdr (assoc 'helpText err))))
               (when (search-forward (regexp-quote input) end t)
-                (let ((m-beg (match-beginning 0))
-                      (m-end (match-end 0))
-                      (m-data (match-data))
+                (let ((m-data (match-data))
                       (ov (make-overlay (match-beginning 0) (match-end 0))))
-                  (overlay-put ov 'face 'hanfix-error-face)
+                  (overlay-put ov 'face 'hanfix-face-error)
                   (recenter 10)
                   (hanfix--update-info-buffer input output help)
                   (unwind-protect
@@ -101,7 +102,7 @@
   (let* ((main-buffer (current-buffer))
          (section-ov (make-overlay start end))
          (status 'ok))
-    (overlay-put section-ov 'face 'hanfix-section-face)
+    (overlay-put section-ov 'face 'hanfix-face-section)
     (recenter 10)
     (unwind-protect
         (let* ((json-raw (with-temp-buffer
