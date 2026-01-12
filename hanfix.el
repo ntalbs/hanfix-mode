@@ -31,8 +31,6 @@
   :type '(repeat string)
   :group 'hanfix)
 
-;;; --- 스타일 ---
-
 (defface hanfix-face-section
   '((t :background "gray90" :extend t))
   "검사 중인 단락 강조."
@@ -51,12 +49,31 @@
 (defconst hanfix-max-length 1000
   "Hanfix CLI로 보낼 문자열 최대 길이.")
 
+;; 조사 목록 (길이가 긴 것부터!)
+(defconst hanfix-korean-josa-list
+  '("에서" "부터" "까지" "조차" "마저" "밖에" "보다" "으로서" "으로써"
+    "에게서" "에게로" "에게도" "에게만"
+    "으로" "라고" "이라고" "하고" "처럼" "만큼" "에게" "께서"
+    "라도" "부터" "까지" "이라" "이나" "든지" "라서" "라니"
+    "와는" "과는" "에게는"
+    "을" "를" "이" "가" "은" "는" "도" "만" "나" "야" "께" "랑" "와" "과"))
+
 (defun hanfix--check-executable ()
   "Hanfix 실행 파일이 있는지 확인."
   (if (executable-find hanfix-path)
       t
     (warn "hanfix 실행 파일을 찾을 수 없습니다. '%s' 경로를 확인하거나 CLI 도구를 설치하세요." hanfix-path)
     nil))
+
+(defun hanfix--split-korean-josa-word (word)
+  "WORD에서 조사 분리. (stem . josa) 또는 (word . nil) 반환."
+  (cl-loop for j in hanfix-korean-josa-list
+           when (and (> (length word) (length j))
+                     (string-suffix-p j word))
+           do (let ((stem (substring word 0 (- (length word) (length j)))))
+                (when (> (length stem) 0)
+                  (cl-return (cons stem j))))
+           finally return word))
 
 (defun hanfix--read-char (chars)
   (let ((ch nil))
@@ -278,7 +295,7 @@ REGION-START부터 REGION-END 범위에서 전체 텍스트 길이가"
 (defun hanfix-check-dummy ()
   "For test only."
   (interactive)
-  (hanfix--show-control-buffer "Hello" "World" "Hello world is not help.")
+  (hanfix--show-control-buffer "솔루션을" "설루션을" "솔루션의 정확한 표기는 설루션이라는데 이게 진짜 맞아?")
   (unwind-protect
       (let ((done nil)
             (choice nil))
