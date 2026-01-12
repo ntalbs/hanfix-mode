@@ -7,8 +7,9 @@
 ;; URL: https://github.com/ntalbs/hanfix-mode
 
 ;;; Commentary:
-;; 이 패키지는 Hanfix CLI 도구를 사용해 Org/Markdown 모드에서
-;; 한국어 맞춤법 검사를 돕는 마이너 모드입니다.
+;; 이 패키지는 Hanfix CLI(https://www.npmjs.com/package/hanfix) 도구를
+;; 사용해 Org/Markdown 모드에서 한국어 맞춤법 검사를 돕는 마이너
+;; 모드입니다.
 
 ;;; Code:
 
