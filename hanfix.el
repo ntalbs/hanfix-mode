@@ -114,33 +114,38 @@
 
                    (when (search-forward input end t)
                      (setq search-from (point))
+                     (let ((m-data (match-data)))
+                       (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
+                         (overlay-put ov 'face 'hanfix-face-error)
 
-                     (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
-                       (overlay-put ov 'face 'hanfix-face-error)
+                         (with-selected-window (get-buffer-window main-buffer)
+                           (recenter 10))
+                         (hanfix--show-control-buffer input output help)
 
-                       (with-selected-window (get-buffer-window main-buffer)
-                         (recenter 10))
-                       (hanfix--show-control-buffer input output help)
-
-                       (unwind-protect
-                           (cl-loop named interaction
-                                    for choice = (hanfix--read-char '(?y ?n ?e ?i ?q ??))
-                                    do
-                                    (cl-case choice
-                                      (?? (hanfix--show-help)
-                                          (when (eq (hanfix--read-char '(?q ??)) ?q)
-                                            (cl-return-from nil 'quit)))
-                                      (?y (replace-match output)
-                                          (undo-boundary)
-                                          (cl-return-from interaction))
-                                      (?n (cl-return-from interaction))
-                                      (?e (replace-match (read-string "수정: " output))
-                                          (undo-boundary)
-                                          (cl-return-from interaction))
-                                      (?i (add-to-list 'hanfix-ignored-words input)
-                                          (cl-return-from interaction))
-                                      (?q (cl-return-from nil 'quit))))
-                         (delete-overlay ov)))))
+                         (unwind-protect
+                             (cl-loop named interaction
+                                      for choice = (hanfix--read-char '(?y ?n ?e ?i ?q ??))
+                                      do
+                                      (cl-case choice
+                                        (?? (hanfix--show-help)
+                                            (when (eq (hanfix--read-char '(?q ??)) ?q)
+                                              (cl-return-from nil 'quit))
+                                            (hanfix--show-control-buffer input output help))
+                                        (?y (with-current-buffer main-buffer
+                                              (set-match-data m-data)
+                                              (replace-match output)
+                                              (undo-boundary))
+                                            (cl-return-from interaction))
+                                        (?n (cl-return-from interaction))
+                                        (?e (with-current-buffer main-buffer
+                                              (set-match-data m-data)
+                                              (replace-match (read-string "수정: " output) t t)
+                                              (undo-boundary))
+                                            (cl-return-from interaction))
+                                        (?i (add-to-list 'hanfix-ignored-words input)
+                                            (cl-return-from interaction))
+                                        (?q (cl-return-from nil 'quit))))
+                           (delete-overlay ov))))))
 
                  ;; 루프가 모든 errors를 순회하고 정상 종료되면 nil 반환
                  finally return nil))))
@@ -201,6 +206,14 @@
                (setq end-point (point))
 
                finally return (cons start-point (point-max))))))
+
+(defun hanfix-highlight-region ()
+  "테스트 함수.  hanfix--get-next-region을 얻어 표시한 다음 5초 후 표시를 제거."
+  (interactive)
+  (cl-destructuring-bind (s . e) (hanfix--get-next-region (point))
+    (let ((ov (make-overlay s e)))
+      (overlay-put ov 'face '(:background "yellow" :extend t))
+      (run-with-timer 5 nil 'delete-overlay ov))))
 
 (defun hanfix--run-loop (start-point)
   "START-POINT부터 hanfix--get-next-region을 호출해 맞춤법 검사할 영역을 얻어가며 검사 진행."
@@ -274,6 +287,7 @@
     (define-key map (kbd "C-c h a") 'hanfix-check-all)
     (define-key map (kbd "C-c h h") 'hanfix-check-from-here)
     (define-key map (kbd "C-c h d") 'hanfix-check-dummy)
+    (define-key map (kbd "C-c h o") 'hanfix-highlight-region)
     map)
   "Keymap for `hanfix-mode'.")
 
