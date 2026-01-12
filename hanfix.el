@@ -69,18 +69,18 @@
       (delete-windows-on buf)
       (kill-buffer buf))))
 
-(defun hanfix--update-info-buffer (input output help)
+(defun hanfix--show-control-buffer (input output help)
   (with-current-buffer (get-buffer-create hanfix-buffer)
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert (propertize "교정 제안:\n\n" 'face 'font-lock-keyword-face))
       (insert (propertize input 'face 'error) " -> " (propertize output 'face 'success) "\n\n")
       (insert help "\n\n")
-      (insert " (y/n/e/i/q/?) ")
+      (insert "적용(y/n/e/i/q/?):")
       (read-only-mode 1)))
   (pop-to-buffer hanfix-buffer '((display-buffer-at-bottom) (window-height . 13))))
 
-(defun hanfix--update-help-buffer ()
+(defun hanfix--show-help ()
   "정보 버퍼에 조작법 도움말을 표시합니다."
   (with-current-buffer (get-buffer-create hanfix-buffer)
     (let ((inhibit-read-only t))
@@ -93,7 +93,7 @@
       (insert (propertize " q " 'face 'font-lock-string-face) "(quit)  : 검사 중단\n")
       (insert (propertize " ? " 'face 'font-lock-string-face) "(help)  : 도움말 표시\n\n")
       (insert "맞춤법 검사로 돌아가려면 '?'를 누르세요.\n")
-      (insert "맞춤법 검사를 끝내려면 'C-g'를 누르세요.\n")
+      (insert "맞춤법 검사를 끝내려면 'q' 또는 'C-g'를 누르세요.\n")
       (set-buffer-modified-p nil)
       (read-only-mode 1))))
 
@@ -120,7 +120,7 @@
                     (with-selected-window (get-buffer-window main-buffer)
                       (recenter 10))
 
-                    (hanfix--update-info-buffer input output help)
+                    (hanfix--show-control-buffer input output help)
 
                     (unwind-protect
                         (let ((done nil)
@@ -129,31 +129,31 @@
                             (setq choice (hanfix--read-char '(?y ?n ?e ?i ?q ??)))
                             (cond
                              ((eq choice ??)
-                              (hanfix--update-help-buffer)
+                              (hanfix--show-help)
                               (if (eq (hanfix--read-char '(?q ??)) ?q)
                                   (progn
                                     (setq done t)
                                     (setq stop-p t)
-                                (hanfix--update-info-buffer input output help))))
+                                    (hanfix--show-control-buffer input output help))))
                              (t (setq done t)
                                 (cond
                                  ((eq choice ?y)
                                   (with-current-buffer main-buffer
-                                      (set-match-data m-data)
-                                      (replace-match output)
-                                      (undo-boundary)))
+                                    (set-match-data m-data)
+                                    (replace-match output)
+                                    (undo-boundary)))
                                  ((eq choice ?e)
                                   (let ((new (read-string "수정: " output)))
                                     (with-current-buffer main-buffer
-                                        (set-match-data m-data)
-                                        (replace-match new)
-                                        (undo-boundary))))
+                                      (set-match-data m-data)
+                                      (replace-match new)
+                                      (undo-boundary))))
                                  ((eq choice ?i)
                                   (add-to-list 'hanfix-ignored-words input)
                                   (customize-save-variable 'hanfix-ignored-words hanfix-ignored-words)
                                   (message "단어 '%s'를 무시 목록에 추가했습니다." input))
                                  ((eq choice ?q) (setq stop-p t)))))))
-                    (delete-overlay ov))))))))))
+                      (delete-overlay ov))))))))))
     stop-p))
 
 (defun hanfix--process-region (start end)
@@ -221,7 +221,7 @@
 (defun hanfix-check-dummy ()
   "For test only."
   (interactive)
-  (hanfix--update-info-buffer "Hello" "World" "Hello world is not help.")
+  (hanfix--show-control-buffer "Hello" "World" "Hello world is not help.")
   (unwind-protect
       (let ((done nil)
             (choice nil))
@@ -229,10 +229,10 @@
           (setq choice (hanfix--read-char '(?y ?n ?e ?i ?q ??)))
           (cond
            ((eq choice ??)
-            (hanfix--update-help-buffer)
+            (hanfix--show-help)
             (if (eq (hanfix--read-char '(?q ??)) ?q)
                 (setq done t)
-              (hanfix--update-info-buffer "Hello" "World" "Hello world is not help.")))
+              (hanfix--show-control-buffer "솔루션을" "설루션을" "솔루션의 정확한 표기는 설루션이라는데 이게 진짜 맞아?")))
            ((eq choice ?q)
             (setq done t))
            (t (message "%c is selected" choice)))))
