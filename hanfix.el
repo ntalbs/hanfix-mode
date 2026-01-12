@@ -12,6 +12,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'json)
 (require 'seq)
 
@@ -99,104 +100,126 @@
       (set-buffer-modified-p nil)
       (read-only-mode 1))))
 
-(defun hanfix--fix-errors (main-buffer start end errors)
-  (let ((stop-p nil)
+(defun hanfix--fix-errors (start end errors)
+  (let ((main-buffer (current-buffer))
         (search-from start))
-    (with-current-buffer main-buffer
-      (save-excursion
-        (goto-char start)
-        (dolist (err errors)
-          (unless stop-p
-            (let ((input (cdr (assoc 'input err)))
-                  (output (cdr (assoc 'output err)))
-                  (help (cdr (assoc 'helpText err))))
-              (with-current-buffer main-buffer
-                (goto-char search-from)
-                (when (search-forward input end t)
-                  (setq search-from (point))
+    (save-excursion
+        (cl-loop for err in errors
+                 for input = (cdr (assoc 'input err))
+                 for output = (cdr (assoc 'output err))
+                 for help = (cdr (assoc 'helpText err))
+                 do
+                 (with-current-buffer main-buffer
+                   (goto-char search-from)
 
-                  (let ((m-data (match-data))
-                        (ov (make-overlay (match-beginning 0) (match-end 0))))
-                    (overlay-put ov 'face 'hanfix-face-error)
+                   (when (search-forward input end t)
+                     (setq search-from (point))
 
-                    (with-selected-window (get-buffer-window main-buffer)
-                      (recenter 10))
+                     (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
+                       (overlay-put ov 'face 'hanfix-face-error)
 
-                    (hanfix--show-control-buffer input output help)
+                       (with-selected-window (get-buffer-window main-buffer)
+                         (recenter 10))
+                       (hanfix--show-control-buffer input output help)
 
-                    (unwind-protect
-                        (let ((done nil)
-                              (choice nil))
-                          (while (not done)
-                            (setq choice (hanfix--read-char '(?y ?n ?e ?i ?q ??)))
-                            (cond
-                             ((eq choice ??)
-                              (hanfix--show-help)
-                              (if (eq (hanfix--read-char '(?q ??)) ?q)
-                                  (progn
-                                    (setq done t)
-                                    (setq stop-p t)
-                                    (hanfix--show-control-buffer input output help))))
-                             (t (setq done t)
-                                (cond
-                                 ((eq choice ?y)
-                                  (with-current-buffer main-buffer
-                                    (set-match-data m-data)
-                                    (replace-match output)
-                                    (undo-boundary)))
-                                 ((eq choice ?e)
-                                  (let ((new (read-string "수정: " output)))
-                                    (with-current-buffer main-buffer
-                                      (set-match-data m-data)
-                                      (replace-match new)
-                                      (undo-boundary))))
-                                 ((eq choice ?i)
-                                  (add-to-list 'hanfix-ignored-words input)
-                                  (customize-save-variable 'hanfix-ignored-words hanfix-ignored-words)
-                                  (message "단어 '%s'를 무시 목록에 추가했습니다." input))
-                                 ((eq choice ?q) (setq stop-p t)))))))
-                      (delete-overlay ov))))))))))
-    stop-p))
+                       (unwind-protect
+                           (cl-loop named interaction
+                                    for choice = (hanfix--read-char '(?y ?n ?e ?i ?q ??))
+                                    do
+                                    (cl-case choice
+                                      (?? (hanfix--show-help)
+                                          (when (eq (hanfix--read-char '(?q ??)) ?q)
+                                            (cl-return-from nil 'quit)))
+                                      (?y (replace-match output)
+                                          (undo-boundary)
+                                          (cl-return-from interaction))
+                                      (?n (cl-return-from interaction))
+                                      (?e (replace-match (read-string "수정: " output))
+                                          (undo-boundary)
+                                          (cl-return-from interaction))
+                                      (?i (add-to-list 'hanfix-ignored-words input)
+                                          (cl-return-from interaction))
+                                      (?q (cl-return-from nil 'quit))))
+                         (delete-overlay ov)))))
+
+                 ;; 루프가 모든 errors를 순회하고 정상 종료되면 nil 반환
+                 finally return nil))))
+
+(defun hanfix--exec-hanfix-bin (text)
+  "TEXT를 hanfix 실행파일 전달하고 실행해 결과 JSON을 파싱해 리턴."
+  (let* ((json-raw (with-temp-buffer
+                     (insert text)
+                     (shell-command-on-region (point-min) (point-max) hanfix-path nil t)
+                     (buffer-string)))
+         (data (condition-case nil
+                   (json-parse-string json-raw :object-type 'alist)
+                 (error nil))))
+    (seq-filter (lambda (err)
+                  (not (member (cdr (assoc 'input err)) hanfix-ignored-words)))
+                (append (cdr (assoc 'errors data)) nil))))
 
 (defun hanfix--process-region (start end)
-  (let* ((main-buffer (current-buffer))
-         (section-ov (make-overlay start end))
+  "START, END로 지정된 영역에서 맞춤법 검사 실행."
+  (let* ((section-ov (make-overlay start end))
          (status 'ok))
     (overlay-put section-ov 'face 'hanfix-face-section)
     (recenter 10)
     (unwind-protect
-        (let* ((json-raw (with-temp-buffer
-                           (insert-buffer-substring main-buffer start end)
-                           (shell-command-on-region (point-min) (point-max) hanfix-path nil t)
-                           (buffer-string)))
-               (data (condition-case nil (json-parse-string json-raw :object-type 'alist) (error nil)))
-               (errors (seq-filter (lambda (err)
-                                     (not (member (cdr (assoc 'input err)) hanfix-ignored-words)))
-                                   (append (cdr (assoc 'errors data)) nil))))
+        (let* ((text (buffer-substring-no-properties start end))
+               (errors (hanfix--exec-hanfix-bin text)))
           (if errors
-              (when (hanfix--fix-errors main-buffer start end errors) (setq status 'quit))
-            (progn (message "오류 없음...") (sit-for 0.05))))
+              (when (hanfix--fix-errors start end errors)
+                (setq status 'quit))
+            (progn
+              (message "오류 없음...")
+              (sit-for 0.05))))
+      ;; cleanup
       (delete-overlay section-ov)
       (hanfix--cleanup-ui))
     status))
 
+(defun hanfix--get-next-region (start-point)
+  "START-POINT부터 전체 텍스트 길이가 hanfix-max-length를 넘지 않으면서 가장 가깝게 되도록 단락을 병합해 범위 리턴."
+  (save-excursion
+    (let* ((current-point start-point)
+           (end-point start-point))
+      (cl-loop while (not (eobp))
+               do
+               (setq end-point (save-excursion (forward-paragraph) (point)))
+
+               if (> (- end-point start-point) hanfix-max-length)
+               return (cons start-point current-point)
+
+               else do
+               (forward-paragraph)
+               (setq current-point end-point)
+               (setq end-point (point))
+
+               finally return (cons start-point (point-max))))))
+
 (defun hanfix--run-loop (start-point)
+  "START-POINT부터 hanfix--get-next-region을 호출해 맞춤법 검사할 영역을 얻어가며 검사 진행."
   (save-excursion
     (goto-char start-point)
-    (let ((continue t))
-      (while (and continue (not (eobp)))
-        (skip-chars-forward " \t\n\r")
-        (unless (eobp)
-          (let* ((p-start (point))
-                 (p-end (save-excursion (forward-paragraph) (point))))
-            (while (let ((next-p (save-excursion (goto-char p-end) (forward-paragraph) (point))))
-                     (and (not (eobp)) (> next-p p-end) (<= (- next-p p-start) hanfix-max-length)))
-              (setq p-end (save-excursion (goto-char p-end) (forward-paragraph) (point))))
-            (if (eq (hanfix--process-region p-start p-end) 'quit)
-                (setq continue nil)
-              (goto-char p-end))))))
-    (hanfix--cleanup-ui)
-    (message "맞춤법 검사가 완료되었습니다.")))
+    (cl-loop
+     ;; 1. 공백 건너뛰고 시작 지점 잡기
+     do (skip-chars-forward " \t\n\r")
+
+     ;; 2. 종료 조건 확인 (끝이면 여기서 멈춤)
+     until (eobp) ;; 문서 끝이면 종료
+
+     ;; 3. 다음 처리할 영역(p-start . p-end) 계산
+     for (p-start . p-end) = (hanfix--get-next-region (point))
+
+
+     ;; 4. 영역 처리 및 'quit 신호 확인. 처리가 끝난 지점으로 이동하여 다음 루프 준비
+     do (if (eq (hanfix--process-region p-start p-end) 'quit)
+            (cl-return) ;; 사용자가 q를 누르면 루프 즉시 탈출
+          (goto-char p-end))))
+
+  ;; 5. 사후 정리
+  (hanfix--cleanup-ui)
+  (message "맞춤법 검사가 완료되었습니다."))
 
 ;;; --- 사용자 명령어 ---
 
