@@ -188,8 +188,13 @@
                (setq end-point (save-excursion (forward-paragraph) (point)))
 
                if (> (- end-point start-point) hanfix-max-length)
-               return (cons start-point current-point)
-
+                   if (= start-point current-point)
+                       return (save-excursion
+                                (goto-char (+ start-point hanfix-max-length))
+                                (backward-word)
+                                (cons start-point (point)))
+                   else
+                       return (cons start-point current-point)
                else do
                (forward-paragraph)
                (setq current-point end-point)
