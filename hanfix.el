@@ -184,40 +184,45 @@
       (hanfix--cleanup-ui))
     status))
 
-(defun hanfix--get-next-region (start-point)
-  "START-POINT부터 전체 텍스트 길이가 hanfix-max-length를 넘지 않으면서 가장 가깝게 되도록 단락을 병합해 범위 리턴."
+(defun hanfix--get-next-region (region-start region-end)
+  "Hanfix-max-length를 넘지 않으면서 가장 가깝게 되도록 단락을 병합해 범위 리턴.
+REGION-START부터 REGION-END 범위에서 전체 텍스트 길이가"
   (save-excursion
-    (let* ((current-point start-point)
-           (end-point start-point))
-      (cl-loop while (not (eobp))
+    (let* ((current-point region-start)
+           (end-point region-start)
+           (region-end (if (not region-end) (point-max) region-end)))
+      (cl-loop while (and (< end-point region-end) (not (eobp)))
                do
                (setq end-point (save-excursion (forward-paragraph) (point)))
 
-               if (> (- end-point start-point) hanfix-max-length)
-                   if (= start-point current-point)
+               if (> (- end-point region-start) hanfix-max-length)
+                   if (= region-start current-point) ; 한 단락이 너무 커서 forward-paragraph 시 hanfix-max-length를 넘은 경우
                        return (save-excursion
-                                (goto-char (+ start-point hanfix-max-length))
+                                (goto-char (+ region-start hanfix-max-length))
                                 (backward-word)
-                                (cons start-point (point)))
+                                (cons region-start (min (point) region-end)))
                    else
-                       return (cons start-point current-point)
+                       return (cons region-start (min current-point region-end))
                else do
-               (forward-paragraph)
-               (setq current-point end-point)
-               (setq end-point (point))
+                   (message ">>> forward-para")
+                   (forward-paragraph)
+                   (setq current-point end-point)
+                   (setq end-point (point))
 
-               finally return (cons start-point (point-max))))))
+               finally
+                   return (cons region-start region-end)))))
 
 (defun hanfix-highlight-region ()
   "테스트 함수.  hanfix--get-next-region을 얻어 표시한 다음 5초 후 표시를 제거."
   (interactive)
-  (cl-destructuring-bind (s . e) (hanfix--get-next-region (point))
+  (cl-destructuring-bind (s . e) (hanfix--get-next-region (point) (point-max))
     (let ((ov (make-overlay s e)))
       (overlay-put ov 'face '(:background "yellow" :extend t))
       (run-with-timer 5 nil 'delete-overlay ov))))
 
-(defun hanfix--run-loop (start-point)
-  "START-POINT부터 hanfix--get-next-region을 호출해 맞춤법 검사할 영역을 얻어가며 검사 진행."
+(defun hanfix--run-loop (start-point &optional end-point)
+  "START-POINT부터 END-POINT까지 hanfix--get-next-region을 호출해 맞춤법 검사할 영역을 얻어가며 검사 진행."
+  (setq end-point (if end-point end-point (point-max)))
   (save-excursion
     (goto-char start-point)
     (cl-loop
@@ -225,10 +230,10 @@
      do (skip-chars-forward " \t\n\r")
 
      ;; 2. 종료 조건 확인 (끝이면 여기서 멈춤)
-     until (eobp) ;; 문서 끝이면 종료
+     until (or (eobp) (>= (point) end-point));; 문서 끝 또는 범위 끝이면 종료
 
      ;; 3. 다음 처리할 영역(p-start . p-end) 계산
-     for (p-start . p-end) = (hanfix--get-next-region (point))
+     for (p-start . p-end) = (hanfix--get-next-region (point) end-point)
 
 
      ;; 4. 영역 처리 및 'quit 신호 확인. 처리가 끝난 지점으로 이동하여 다음 루프 준비
@@ -248,9 +253,7 @@
   (let* ((use-region (use-region-p))
          (start (if use-region (region-beginning) (save-excursion (backward-paragraph) (point))))
          (end (if use-region (region-end) (save-excursion (forward-paragraph) (point)))))
-    (deactivate-mark)
-    (hanfix--process-region start end)
-    (message "검사 완료.")))
+    (hanfix--run-loop start end)))
 
 (defun hanfix-check-all ()
   "문서 처음부터 끝까지 전체를 검사합니다."
