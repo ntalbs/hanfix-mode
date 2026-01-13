@@ -73,7 +73,7 @@
            do (let ((stem (substring word 0 (- (length word) (length j)))))
                 (when (> (length stem) 0)
                   (cl-return (cons stem j))))
-           finally return word))
+           finally return (cons word nil)))
 
 (defun hanfix--read-char (chars)
   (let ((ch nil))
