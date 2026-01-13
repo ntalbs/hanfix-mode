@@ -75,6 +75,9 @@
                   (cl-return (cons stem j))))
            finally return (cons word nil)))
 
+(defun hanfix--remove-josa (word)
+  (car (hanfix--split-korean-josa-word word)))
+
 (defun hanfix--read-char (chars)
   (let ((ch nil))
     (while (not (memq ch chars))
@@ -130,10 +133,12 @@
   (let ((main-buffer (current-buffer))
         (search-from start))
     (save-excursion
-      (cl-loop for err in errors
+      (cl-loop named main-loop
+               for err in errors
                for input = (cdr (assoc 'input err))
                for output = (cdr (assoc 'output err))
                for help = (cdr (assoc 'helpText err))
+               unless (member (hanfix--remove-josa input) hanfix-ignored-words)
                do
                (with-current-buffer main-buffer
                  (goto-char search-from)
@@ -157,7 +162,7 @@
                                     (cl-case choice
                                       (?? (hanfix--show-help)
                                           (when (eq (hanfix--read-char '(?q ??)) ?q)
-                                            (cl-return-from nil 'quit))
+                                            (cl-return-from main-loop 'quit))
                                           (hanfix--show-control-buffer input output help))
                                       (?y (with-current-buffer main-buffer
                                             (set-match-data m-data)
@@ -170,13 +175,14 @@
                                             (replace-match (read-string "수정: " output) t t)
                                             (undo-boundary))
                                           (cl-return-from interaction))
-                                      (?i (add-to-list 'hanfix-ignored-words input)
+                                      (?i (add-to-list 'hanfix-ignored-words (hanfix--remove-josa input))
                                           (cl-return-from interaction))
                                       (?q (cl-return-from nil 'quit))))
                          (delete-overlay ov))))))
 
                ;; 루프가 모든 errors를 순회하고 정상 종료되면 nil 반환
-               finally return nil))))
+               finally
+               return nil))))
 
 (defun hanfix--exec-hanfix-bin (text)
   "TEXT를 hanfix 실행파일 전달하고 실행해 결과 JSON을 파싱해 리턴."
@@ -231,7 +237,6 @@ REGION-START부터 REGION-END 범위에서 전체 텍스트 길이가"
                    else
                        return (cons region-start (min current-point region-end))
                else do
-                   (message ">>> forward-para")
                    (forward-paragraph)
                    (setq current-point end-point)
                    (setq end-point (point))
@@ -270,6 +275,10 @@ REGION-START부터 REGION-END 범위에서 전체 텍스트 길이가"
 
   ;; 5. 사후 정리
   (hanfix--cleanup-ui)
+
+  (setq hanfix-ignored-words (sort (delete-dups hanfix-ignored-words) #'string<))
+  (customize-save-variable 'hanfix-ignored-words hanfix-ignored-words)
+
   (message "맞춤법 검사가 완료되었습니다."))
 
 ;;; --- 사용자 명령어 ---
