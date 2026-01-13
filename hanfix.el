@@ -113,53 +113,53 @@
   (let ((main-buffer (current-buffer))
         (search-from start))
     (save-excursion
-        (cl-loop for err in errors
-                 for input = (cdr (assoc 'input err))
-                 for output = (cdr (assoc 'output err))
-                 for help = (cdr (assoc 'helpText err))
-                 do
-                 (with-current-buffer main-buffer
-                   (goto-char search-from)
+      (cl-loop for err in errors
+               for input = (cdr (assoc 'input err))
+               for output = (cdr (assoc 'output err))
+               for help = (cdr (assoc 'helpText err))
+               do
+               (with-current-buffer main-buffer
+                 (goto-char search-from)
 
-                   (when (search-forward input end t)
-                     (setq search-from (point))
-                     (let ((m-data (match-data)))
-                       (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
-                         (overlay-put ov 'face 'hanfix-face-error)
+                 (when (search-forward input end t)
+                   (setq search-from (point))
+                   (let ((m-data (match-data)))
+                     (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
+                       (overlay-put ov 'face 'hanfix-face-error)
 
-                         (with-selected-window (get-buffer-window main-buffer)
-                           (goto-char search-from)
-                           (hanfix--recenter 10))
+                       (with-selected-window (get-buffer-window main-buffer)
+                         (goto-char search-from)
+                         (hanfix--recenter 10))
 
-                         (hanfix--show-control-buffer input output help)
+                       (hanfix--show-control-buffer input output help)
 
-                         (unwind-protect
-                             (cl-loop named interaction
-                                      for choice = (hanfix--read-char '(?y ?n ?e ?i ?q ??))
-                                      do
-                                      (cl-case choice
-                                        (?? (hanfix--show-help)
-                                            (when (eq (hanfix--read-char '(?q ??)) ?q)
-                                              (cl-return-from nil 'quit))
-                                            (hanfix--show-control-buffer input output help))
-                                        (?y (with-current-buffer main-buffer
-                                              (set-match-data m-data)
-                                              (replace-match output)
-                                              (undo-boundary))
-                                            (cl-return-from interaction))
-                                        (?n (cl-return-from interaction))
-                                        (?e (with-current-buffer main-buffer
-                                              (set-match-data m-data)
-                                              (replace-match (read-string "수정: " output) t t)
-                                              (undo-boundary))
-                                            (cl-return-from interaction))
-                                        (?i (add-to-list 'hanfix-ignored-words input)
-                                            (cl-return-from interaction))
-                                        (?q (cl-return-from nil 'quit))))
-                           (delete-overlay ov))))))
+                       (unwind-protect
+                           (cl-loop named interaction
+                                    for choice = (hanfix--read-char '(?y ?n ?e ?i ?q ??))
+                                    do
+                                    (cl-case choice
+                                      (?? (hanfix--show-help)
+                                          (when (eq (hanfix--read-char '(?q ??)) ?q)
+                                            (cl-return-from nil 'quit))
+                                          (hanfix--show-control-buffer input output help))
+                                      (?y (with-current-buffer main-buffer
+                                            (set-match-data m-data)
+                                            (replace-match output)
+                                            (undo-boundary))
+                                          (cl-return-from interaction))
+                                      (?n (cl-return-from interaction))
+                                      (?e (with-current-buffer main-buffer
+                                            (set-match-data m-data)
+                                            (replace-match (read-string "수정: " output) t t)
+                                            (undo-boundary))
+                                          (cl-return-from interaction))
+                                      (?i (add-to-list 'hanfix-ignored-words input)
+                                          (cl-return-from interaction))
+                                      (?q (cl-return-from nil 'quit))))
+                         (delete-overlay ov))))))
 
-                 ;; 루프가 모든 errors를 순회하고 정상 종료되면 nil 반환
-                 finally return nil))))
+               ;; 루프가 모든 errors를 순회하고 정상 종료되면 nil 반환
+               finally return nil))))
 
 (defun hanfix--exec-hanfix-bin (text)
   "TEXT를 hanfix 실행파일 전달하고 실행해 결과 JSON을 파싱해 리턴."
