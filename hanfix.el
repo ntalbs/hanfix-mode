@@ -206,6 +206,7 @@
          (status 'ok))
     (overlay-put section-ov 'face 'hanfix-face-section)
     (recenter 10)
+    (redisplay t)
     (unwind-protect
         (let* ((text (buffer-substring-no-properties start end))
                (errors (hanfix--exec-hanfix-bin text)))
