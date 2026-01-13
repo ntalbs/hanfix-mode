@@ -138,7 +138,8 @@
                for input = (cdr (assoc 'input err))
                for output = (cdr (assoc 'output err))
                for help = (cdr (assoc 'helpText err))
-               unless (member (hanfix--remove-josa input) hanfix-ignored-words)
+               unless (or (member (hanfix--remove-josa input) hanfix-ignored-words)
+                          (string-match-p "\\`[[:ascii:]]*\\'" input))
                do
                (with-current-buffer main-buffer
                  (goto-char search-from)
