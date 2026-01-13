@@ -209,10 +209,7 @@
                (errors (hanfix--exec-hanfix-bin text)))
           (if errors
               (when (hanfix--fix-errors start end errors)
-                (setq status 'quit))
-            (progn
-              (message "오류 없음...")
-              (sit-for 0.05))))
+                (setq status 'quit))))
       ;; cleanup
       (delete-overlay section-ov)
       (hanfix--cleanup-ui))
