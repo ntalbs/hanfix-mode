@@ -101,6 +101,14 @@
       (set-buffer-modified-p nil)
       (read-only-mode 1))))
 
+(defun hanfix--recenter (n)
+  (let* ((pos (pos-visible-in-window-p (point) nil t))
+         (y-pos (cadr pos))
+         (win-height (window-body-height nil t)))
+    (when (or (null pos)
+              (> y-pos (* win-height 0.5)))
+      (recenter n))))
+
 (defun hanfix--fix-errors (start end errors)
   (let ((main-buffer (current-buffer))
         (search-from start))
@@ -120,7 +128,9 @@
                          (overlay-put ov 'face 'hanfix-face-error)
 
                          (with-selected-window (get-buffer-window main-buffer)
-                           (recenter 10))
+                           (goto-char search-from)
+                           (hanfix--recenter 10))
+
                          (hanfix--show-control-buffer input output help)
 
                          (unwind-protect
