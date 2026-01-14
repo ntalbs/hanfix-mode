@@ -26,7 +26,7 @@
   :type 'file
   :group 'hanfix)
 
-(defcustom hanfix-ignored-words '()
+(defcustom hanfix-ignore-words '()
   "맞춤법 검사 시 무시할 단어 목록."
   :type '(repeat string)
   :group 'hanfix)
@@ -143,7 +143,7 @@
                for input = (cdr (assoc 'input err))
                for output = (cdr (assoc 'output err))
                for help = (cdr (assoc 'helpText err))
-               unless (or (member (hanfix--remove-josa input) hanfix-ignored-words)
+               unless (or (member (hanfix--remove-josa input) hanfix-ignore-words)
                           (string-match-p "\\`[[:ascii:]]*\\'" input))
                do
                (with-current-buffer main-buffer
@@ -181,7 +181,7 @@
                                             (replace-match (read-string "수정: " output) t t)
                                             (undo-boundary))
                                           (cl-return-from interaction))
-                                      (?i (add-to-list 'hanfix-ignored-words (hanfix--remove-josa input))
+                                      (?i (add-to-list 'hanfix-ignore-words (hanfix--remove-josa input))
                                           (cl-return-from interaction))
                                       (?q (cl-return-from nil 'quit))))
                          (delete-overlay ov))))))
@@ -200,7 +200,7 @@
                    (json-parse-string json-raw :object-type 'alist)
                  (error nil))))
     (seq-filter (lambda (err)
-                  (not (member (cdr (assoc 'input err)) hanfix-ignored-words)))
+                  (not (member (cdr (assoc 'input err)) hanfix-ignore-words)))
                 (append (cdr (assoc 'errors data)) nil))))
 
 (defun hanfix--process-region (start end)
@@ -280,8 +280,8 @@ REGION-START부터 REGION-END 범위에서 전체 텍스트 길이가"
   ;; 5. 사후 정리
   (hanfix--cleanup-ui)
 
-  (setq hanfix-ignored-words (sort (delete-dups hanfix-ignored-words) #'string<))
-  (customize-save-variable 'hanfix-ignored-words hanfix-ignored-words)
+  (setq hanfix-ignore-words (sort (delete-dups hanfix-ignore-words) #'string<))
+  (customize-save-variable 'hanfix-ignore-words hanfix-ignore-words)
 
   (message "맞춤법 검사가 완료되었습니다."))
 
