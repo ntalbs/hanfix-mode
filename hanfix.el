@@ -1,14 +1,16 @@
 ;;; hanfix.el --- Gemini-based Korean grammar checker -*- lexical-binding: t; -*-
 
-;; Author: ntalbs
+;; Copyright (C) 2026 Hanfix
+
+;; Author: ntalbs <ntalbsen@gmail.com>
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "30.2"))
 ;; Keywords: convenience, wp
 ;; URL: https://github.com/ntalbs/hanfix-mode
 
 ;;; Commentary:
-;; 이 패키지는 Gemini API를 사용해 한국어 맞춤법 및 문법 교정을 돕는
-;; 마이너 모드입니다.
+;; This package provides a minor mode to check and correct Korean
+;; grammar and spelling using the Google Gemini API.
 
 ;;; Code:
 
@@ -26,8 +28,8 @@
   :type 'string
   :group 'hanfix)
 
-(defcustom hanfix-max-length 1000
-  "Hanfix CLI로 보낼 문자열 최대 길이."
+(defcustom hanfix-max-length 2000
+  "Gemini에 보낼 문자열 최대 길이."
   :type 'number
   :group 'hanfix)
 
@@ -35,6 +37,8 @@
   "맞춤법 검사 시 무시할 단어 목록."
   :type '(repeat string)
   :group 'hanfix)
+
+;;; --- Faces ---
 
 (defface hanfix-face-section
   '((t :background "gray90" :extend t))
@@ -61,111 +65,31 @@
   "Hanfix 버퍼 수정 제안 텍스트."
   :group 'hanfix)
 
-;;; --- 내부 유틸리티 ---
+;;; --- Internal Utilities ---
 
 (defconst hanfix-buffer "*Hanfix*"
   "Hanfix에서 사용할 버퍼 이름.")
 
-;; 조사 목록 (길이가 긴 것부터!)
 (defconst hanfix-korean-josa-list
-  '(;; 3글자
+  '(;; 3-chars
     "에게는" "에게도" "에게로" "에게만" "에게서" "이라고" "으로서" "으로써"
-    ;; 2글자
+    ;; 2-chars
     "과는" "까지" "께서" "라도" "라고" "라니" "라서" "만큼" "마저" "밖에"
     "보다" "부터" "에게" "와는" "으로" "이나" "이라" "조차" "처럼" "하고"
-    ;; 1글자
+    ;; 1-chars
     "가" "과" "께" "나" "는" "도" "랑" "를" "만" "야" "와" "은" "을" "이" "에"
 
-    ;; 기타 (조사는 아니지만, 어구 끝에 조사처럼 붙어서 처리되는 녀석들)
-    ":" ","))
+    ;; not postpositions, but can be treaated in similar way.
+    ":" ",")
+  "List of Korean postpositions (Josa) for word stem extraction.")
 
 (defun hanfix--check-gemini-api-key ()
-  "Google API Key가 설정되었는지 확인."
+  "Check if the Gemini API key is set."
   (if (string-empty-p hanfix-gemini-api-key)
       (error "'M-x customize-group hanfix'에서 Gemini API 키를 설정하세요")))
 
-(defun hanfix--build-prompt (text)
-  "TEXT를 이용해 Gemini에 보낼 프롬프트 생성."
-  (let ((ignored (if hanfix-ignore-words
-                     (concat "\n단, 다음 단어들은 사용자가 의도한 것이므로 절대 수정하지 마: "
-                             (mapconcat 'identity hanfix-ignore-words ", ")))))
-    (concat
-     "당신은 한국어 맞춤법 및 문법 교정 전문가입니다."
-     "아래 제공된 텍스트의 오류를 찾아 교정안을 제시하세요."
-     ignored
-     "\n\n응답은 반드시 아래와 같은 JSON 형식이어야 합니다."
-     "다른 설명은 생략하세요:"
-     "\n{\"errors\": [{\"original\": \"틀린부분\", \"suggestions\": [\"교정안1\", \"교정안2\"], \"explanation\": \"이유\"}]}"
-     "\n\n텍스트: "
-     text)))
-
-(defun hanfix--exec-gemini (text)
-  ;; (message "테스트 모드: Mock 데이터를 반환합니다.")
-  ;; '(((original . "스크립트 조합해 사용해")
-  ;;    (suggestions . ["스크립트를 조합해 사용하여" "스크립트와 조합하여 사용해"])
-  ;;    (explanation . "목적격 조사(를)가 생략되어 문맥이 매끄럽지 않으며, 동일한 어미 '-해'가 반복적으로 사용되었습니다. 조사를 추가하고 어미를 다양화하는 것이 좋습니다."))
-  ;;   ((original . "써왔는데")
-  ;;    (suggestions . ["써 왔는데"])
-  ;;    (explanation . "본동사 '쓰다'와 보조 동사 '오다'가 결합한 경우로, '아/어 오다' 구성은 띄어 쓰는 것이 원칙이며 붙여 쓰는 것도 허용되나, 의미 전달의 명확성을 위해 띄어 쓰는 것이 권장됩니다."))
-  ;;   ((original . "찝찝했다")
-  ;;    (suggestions . ["찜찜했다"])
-  ;;    (explanation . "'찝찝하다'는 표준어이지만, '마음이 가볍지 않고 언짢은 느낌이 있다'는 의미로는 '찜찜하다'가 더 널리 쓰이는 표준 표현입니다."))))
-  "Gemini API를 호출하여 결과를 파싱해 에러 리스트를 반환합니다."
-  (let* ((model "gemini-3-flash-preview")
-         (api-url (format "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" model))
-         (url-request-method "POST")
-         ;; API 키를 헤더용 유니바이트 바이트 문자열로 변환
-         (safe-api-key (encode-coding-string hanfix-gemini-api-key 'utf-8))
-         (url-request-extra-headers
-          `(("Content-Type" . "application/json")
-            ("x-goog-api-key" . ,safe-api-key)))
-         ;; 프롬프트 생성 및 JSON 인코딩
-         (json-str (json-encode
-                    `((contents . [((parts . [((text . ,(hanfix--build-prompt text)))]))])
-                      (generationConfig . ((response_mime_type . "application/json"))))))
-         ;; 본문 데이터(한글 포함)를 UTF-8 바이트 문자열로 변환
-         (url-request-data (encode-coding-string json-str 'utf-8))
-         (buffer (url-retrieve-synchronously api-url)))
-
-    (if (not buffer)
-        (error "API 호출 중 응답 버퍼를 생성하지 못했습니다.")
-      (with-current-buffer buffer
-        (set-buffer-multibyte t)
-        (decode-coding-region (point-min) (point-max) 'utf-8)
-
-        (goto-char (point-min))
-
-        ;; HTTP 응답 코드 확인 (200 OK 여부)
-        (if (not (re-search-forward "^HTTP/[0-9.]+\\s-+200" nil t))
-            (let ((resp-content (buffer-string)))
-              (kill-buffer buffer)
-              (error "Gemini API 호출 실패 (HTTP Error): %s" resp-content))
-          ;; 본문 시작 위치로 이동
-          (goto-char (point-min))
-          (if (not (re-search-forward "^$" nil t))
-              (progn (kill-buffer buffer) (error "API 응답 헤더와 본문을 분리할 수 없습니다."))
-            (let* ((json-object (json-read))
-                   ;; 안전한 데이터 추출
-                   (candidates (append (cdr (assoc 'candidates json-object)) nil))
-                   (first-candidate (elt candidates 0))
-                   (content (cdr (assoc 'content first-candidate)))
-                   (parts (append (cdr (assoc 'parts content)) nil))
-                   (first-part (elt parts 0))
-                   (content-text (cdr (assoc 'text first-part))))
-
-              (kill-buffer buffer)
-              (if (not content-text)
-                  (progn
-                    (message "API 응답 본문에 텍스트 데이터가 없습니다.")
-                    nil)
-                ;; 제미니가 반환한 JSON 텍스트 파싱 (original, suggestions, explanation 구조)
-                (let* ((parsed-res (json-read-from-string content-text))
-                       (errors (append (cdr (assoc 'errors parsed-res)) nil)))
-                  (message ">>> %s" errors)
-                  errors)))))))))
-
 (defun hanfix--split-korean-josa-word (word)
-  "WORD에서 조사 분리. (stem . josa) 또는 (word . nil) 반환."
+  "Split WORD into (stem . josa) or (word . nil)."
   (cl-loop for j in hanfix-korean-josa-list
            when (and (> (length word) (length j))
                      (string-suffix-p j word))
@@ -175,23 +99,32 @@
            finally return (cons word nil)))
 
 (defun hanfix--remove-josa (word)
+  "Return WORD without its postposition (josa)."
   (car (hanfix--split-korean-josa-word word)))
 
 (defun hanfix--read-char (chars)
+  "Read a character from the user, restected to those in CHARS."
   (let ((ch nil))
     (while (not (memq ch chars))
       (clear-this-command-keys)
       (setq ch (read-char-exclusive)))
     ch))
 
-(defun hanfix--cleanup-ui ()
-  (let ((buf (get-buffer hanfix-buffer)))
-    (when (buffer-live-p buf)
-      (delete-windows-on buf)
-      (kill-buffer buf))))
+(defun hanfix--recenter (n)
+  "Recenter to keep the correction overlay visible upper half of the window.
+With a numeric prefix argument N, recenter putting point on screen line N
+relative to the selected window."
+  (let* ((pos (pos-visible-in-window-p (point) nil t))
+         (y-pos (cadr pos))
+         (win-height (window-body-height nil t)))
+    (when (or (null pos)
+              (> y-pos (* win-height 0.5)))
+      (recenter n))))
 
-(defun hanfix--show-control-buffer (original suggestions help)
-  "벡터 형식의 suggestions를 받아 번호와 함께 표시합니다."
+(defun hanfix--show-control-buffer (original suggestions explanation)
+  "Display Hanfix control buffer.
+The user can see the ORIGINAL text, and list of SUGGESTIONS, and
+detailed EXPLANATION."
   (with-current-buffer (get-buffer-create hanfix-buffer)
     (let ((len (length suggestions)))
       (erase-buffer)
@@ -210,7 +143,7 @@
       (insert "\n")
       (insert (propertize " 설명:\n" 'face 'hanfix-face-buffer-section-header))
       (let ((filled-help (with-temp-buffer
-                           (insert help)
+                           (insert explanation)
                            (fill-region (point-min) (point-max))
                            (buffer-string))))
         (insert "\n" filled-help "\n\n"))
@@ -221,7 +154,7 @@
         (pop-to-buffer hanfix-buffer `((display-buffer-at-bottom) (window-height . ,desired-height)))))))
 
 (defun hanfix--show-help ()
-  "정보 버퍼에 조작법 도움말을 표시합니다."
+  "Display the keybinding help in the control buffer."
   (with-current-buffer (get-buffer-create hanfix-buffer)
     (erase-buffer)
     (insert (propertize "맞춤법 검사 옵션 (y/n/e/i/q/?) 설명\n" 'face 'font-lock-keyword-face))
@@ -235,21 +168,85 @@
     (insert "맞춤법 검사를 끝내려면 'q' 또는 'C-g'를 누르세요.\n")
     (set-buffer-modified-p nil)))
 
-(defun hanfix--recenter (n)
-  (let* ((pos (pos-visible-in-window-p (point) nil t))
-         (y-pos (cadr pos))
-         (win-height (window-body-height nil t)))
-    (when (or (null pos)
-              (> y-pos (* win-height 0.5)))
-      (recenter n))))
+(defun hanfix--cleanup-ui ()
+  "Remove Hanfix control buffer and its associated window."
+  (let ((buf (get-buffer hanfix-buffer)))
+    (when (buffer-live-p buf)
+      (delete-windows-on buf)
+      (kill-buffer buf))))
+
+(defun hanfix--build-prompt (text)
+  "Create a prompt text for Gemini using the provided TEXT."
+  (let ((ignored (if hanfix-ignore-words
+                     (concat "\n단, 다음 단어들은 사용자가 의도한 것이므로 절대 수정하지 마세요!: "
+                             (mapconcat 'identity hanfix-ignore-words ", ")))))
+    (concat
+     "당신은 한국어 맞춤법 및 문법 교정 전문가입니다."
+     "아래 제공된 텍스트의 오류를 찾아 교정안을 제시하세요."
+     ignored
+     "\n\n응답은 반드시 아래와 같은 JSON 형식이어야 합니다."
+     "다른 설명은 생략하세요:"
+     "\n{\"errors\": [{\"original\": \"틀린부분\", \"suggestions\": [\"교정안1\", \"교정안2\"], \"explanation\": \"이유\"}]}"
+     "\n\n텍스트: "
+     text)))
+
+(defun hanfix--exec-gemini (text)
+  "Call Gemini API with the provided TEXT.
+Generate a prompt for TEXT with `hanfix--build-prompt',
+then parse the response, and return a vector of errors."
+  (let* ((model "gemini-3-flash-preview")
+         (api-url (format "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" model))
+         (url-request-method "POST")
+         (url-request-extra-headers
+          `(("Content-Type" . "application/json")
+            ("x-goog-api-key" . ,hanfix-gemini-api-key)))
+         (json-str (json-encode
+                    `((contents . [((parts . [((text . ,(hanfix--build-prompt text)))]))])
+                      (generationConfig . ((response_mime_type . "application/json"))))))
+         (url-request-data (encode-coding-string json-str 'utf-8))
+         (buffer (url-retrieve-synchronously api-url)))
+
+    (if (not buffer)
+        (error "API 호출 중 응답 버퍼를 생성하지 못했습니다")
+      (with-current-buffer buffer
+        (set-buffer-multibyte t)
+        (decode-coding-region (point-min) (point-max) 'utf-8)
+
+        (goto-char (point-min))
+
+        ;; HTTP 응답 코드 확인 (200 OK 여부)
+        (if (not (re-search-forward "^HTTP/[0-9.]+\\s-+200" nil t))
+            (let ((resp-content (buffer-string)))
+              (error "Gemini API 호출 실패 (HTTP Error): %s" resp-content))
+          ;; 본문 시작 위치로 이동
+          (goto-char (point-min))
+          (if (not (re-search-forward "^$" nil t))
+              (error "API 응답 헤더와 본문을 분리할 수 없습니다")
+            (let* ((json-object (json-read))
+                   (candidates (cdr (assoc 'candidates json-object)))
+                   (first-candidate (aref candidates 0))
+                   (content (cdr (assoc 'content first-candidate)))
+                   (parts (cdr (assoc 'parts content)))
+                   (first-part (aref parts 0))
+                   (content-text (cdr (assoc 'text first-part))))
+              (if (not content-text)
+                  (message "API 응답 본문에 텍스트 데이터가 없습니다.")
+                (let* ((parsed-res (json-parse-string content-text
+                                                      :object-type 'alist
+                                                      :array-type 'array))
+                       (errors (cdr (assoc 'errors parsed-res))))
+                  errors)))))))))
 
 (defun hanfix--fix-errors (start end errors)
+  "Iterate through the ERRORS within the region between START and END.
+The user can see the errors, correction suggestions, and detailed explanation,
+and decide how to handle the error through control buffer."
   (let ((main-buffer (current-buffer))
         (search-from start)
         (search-until (copy-marker end)))
     (save-excursion
       (cl-loop named main-loop
-               for err in errors
+               for err across errors
                for original = (cdr (assoc 'original err))
                for suggestions = (cdr (assoc 'suggestions err))
                for explanation = (cdr (assoc 'explanation err))
@@ -308,7 +305,7 @@
                        (delete-overlay ov)))))))))
 
 (defun hanfix--process-region (start end)
-  "START, END로 지정된 영역에서 맞춤법 검사 실행."
+  "Execute grammar check for the region defined by START and END."
   (let* ((section-ov (make-overlay start end))
          (status 'ok))
     (overlay-put section-ov 'face 'hanfix-face-section)
@@ -325,63 +322,57 @@
       (hanfix--cleanup-ui))
     status))
 
-(defun hanfix--get-next-region (region-start region-end)
-  "Hanfix-max-length를 넘지 않으면서 가장 가깝게 되도록 단락을 병합해 범위 리턴.
-REGION-START부터 REGION-END 범위에서 전체 텍스트 길이가"
+(defun hanfix--get-next-region (start end)
+  "Find the optimal region for checking within the region defined by START and END.
+The length of the computed region is supposed to be as close as possible,
+but not exceed `hanfix-max-length'"
   (save-excursion
-    (let* ((current-point region-start)
-           (end-point region-start)
-           (region-end (if (not region-end) (point-max) region-end)))
-      (cl-loop while (and (< end-point region-end) (not (eobp)))
+    (let* ((current-point start)
+           (end-point start)
+           (end (if (not end) (point-max) end)))
+      (cl-loop while (and (< end-point end) (not (eobp)))
                do
                (setq end-point (save-excursion (forward-paragraph) (point)))
 
-               if (> (- end-point region-start) hanfix-max-length)
-                   if (= region-start current-point) ; 한 단락이 너무 커서 forward-paragraph 시 hanfix-max-length를 넘은 경우
+               if (> (- end-point start) hanfix-max-length)
+                   if (= start current-point)
                        return (save-excursion
-                                (goto-char (+ region-start hanfix-max-length))
+                                (goto-char (+ start hanfix-max-length))
                                 (backward-word)
-                                (cons region-start (min (point) region-end)))
+                                (cons start (min (point) end)))
                    else
-                       return (cons region-start (min current-point region-end))
+                       return (cons start (min current-point end))
                else do
                    (forward-paragraph)
                    (setq current-point end-point)
                    (setq end-point (point))
 
                finally
-                   return (cons region-start region-end)))))
+                   return (cons start end)))))
 
-(defun hanfix-highlight-region ()
-  "테스트 함수.  hanfix--get-next-region을 얻어 표시한 다음 5초 후 표시를 제거."
-  (interactive)
-  (cl-destructuring-bind (s . e) (hanfix--get-next-region (point) (point-max))
-    (let ((ov (make-overlay s e)))
-      (overlay-put ov 'face '(:background "yellow" :extend t))
-      (run-with-timer 5 nil 'delete-overlay ov))))
-
-(defun hanfix--run-loop (start-point &optional end-point)
-  "START-POINT부터 END-POINT까지 hanfix--get-next-region을 호출해 맞춤법 검사할 영역을 얻어가며 검사 진행."
-  (setq end-point (if end-point end-point (point-max)))
+(defun hanfix--run-loop (start &optional end)
+  "Iteratively check text from START to END.
+If END is not provided, it will check to the end of the buffer."
+  (setq end (if end end (point-max)))
   (save-excursion
-    (goto-char start-point)
+    (goto-char start)
     (cl-loop
-     ;; 1. 공백 건너뛰고 시작 지점 잡기
+     ;; 1. skip whitespaces
      do (skip-chars-forward " \t\n\r")
 
-     ;; 2. 종료 조건 확인 (끝이면 여기서 멈춤)
-     until (or (eobp) (>= (point) end-point));; 문서 끝 또는 범위 끝이면 종료
+     ;; 2. check if it reached the end
+     until (or (eobp) (>= (point) end))
 
-     ;; 3. 다음 처리할 영역(p-start . p-end) 계산
-     for (p-start . p-end) = (hanfix--get-next-region (point) end-point)
+     ;; 3. get next region to check (p-start . p-end)
+     for (p-start . p-end) = (hanfix--get-next-region (point) end)
 
 
-     ;; 4. 영역 처리 및 'quit 신호 확인. 처리가 끝난 지점으로 이동하여 다음 루프 준비
+     ;; 4. check the region obtained above. quit the loop if the user selected 'quit
      do (if (eq (hanfix--process-region p-start p-end) 'quit)
-            (cl-return) ;; 사용자가 q를 누르면 루프 즉시 탈출
+            (cl-return)
           (goto-char p-end))))
 
-  ;; 5. 사후 정리
+  ;; 5. cleanup
   (hanfix--cleanup-ui)
 
   (setq hanfix-ignore-words (sort (delete-dups hanfix-ignore-words) #'string<))
@@ -389,10 +380,19 @@ REGION-START부터 REGION-END 범위에서 전체 텍스트 길이가"
 
   (message "맞춤법 검사가 완료되었습니다."))
 
-;;; --- 사용자 명령어 ---
+;;; --- User Commands ---
+
+(defun hanfix-highlight-region ()
+  "Test function, which highlight the next region for 5 secs."
+  (interactive)
+  (cl-destructuring-bind (s . e) (hanfix--get-next-region (point) (point-max))
+    (let ((ov (make-overlay s e)))
+      (overlay-put ov 'face '(:background "yellow" :extend t))
+      (run-with-timer 5 nil 'delete-overlay ov))))
 
 (defun hanfix-check-region ()
-  "현재 영역 또는 단락 하나만 검사합니다."
+  "Check the current region.
+If no region is specified, check the current paragraph."
   (interactive)
   (let* ((use-region (use-region-p))
          (start (if use-region (region-beginning) (save-excursion (backward-paragraph) (point))))
@@ -400,12 +400,12 @@ REGION-START부터 REGION-END 범위에서 전체 텍스트 길이가"
     (hanfix--run-loop start end)))
 
 (defun hanfix-check-all ()
-  "문서 처음부터 끝까지 전체를 검사합니다."
+  "Check the entire document."
   (interactive)
   (hanfix--run-loop (point-min)))
 
 (defun hanfix-check-from-here ()
-  "현재 커서 위치부터 문서 끝까지 검사합니다."
+  "Check the document starting from the current cursor position."
   (interactive)
   (hanfix--run-loop (point)))
 
