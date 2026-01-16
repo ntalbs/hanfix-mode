@@ -20,21 +20,29 @@
 (require 'url)
 
 (defgroup hanfix nil
-  "한국어 맞춤법 검사기 hanfix 설정."
+  "한국어 맞춤법 검사기 hanfix 설정." ; Korean grammar checker hanfix config
   :group 'editing)
 
 (defcustom hanfix-gemini-api-key ""
-  "Gemini API 키 (https://aistudio.google.com/ 에서 발급)."
+  "Gemini API 키 (https://aistudio.google.com/ 에서 발급)." ; Gemini API key
   :type 'string
   :group 'hanfix)
 
-(defcustom hanfix-max-length 2000
-  "Gemini에 보낼 문자열 최대 길이."
+(defcustom hanfix-gemini-model "gemini-3-flash-preview"
+  "사용할 Gemini 모델." ; Gemini model to use
+  :type '(choice (const :tag "Gemini 3.0 Flash" "gemini-3-flash-preview")
+                 (const :tag "Gemini 2.5 Pro" "gemini-2.5-pro")
+                 (const :tag "Gemini 2.5 Flash" "gemini-2.5-flash")
+                 (const :tag "Gemini 2.5 Flash-Lite" "gemini-2.5-flash-lite"))
+  :group 'hanfix)
+
+(defcustom hanfix-max-length 3000
+  "Gemini에 보낼 문자열 최대 길이." ; Maximum length of text to be sent to Gemini
   :type 'number
   :group 'hanfix)
 
 (defcustom hanfix-ignore-words '()
-  "맞춤법 검사 시 무시할 단어 목록."
+  "맞춤법 검사 시 무시할 단어 목록." ; List of ignore words
   :type '(repeat string)
   :group 'hanfix)
 
@@ -42,33 +50,33 @@
 
 (defface hanfix-face-section
   '((t :background "gray90" :extend t))
-  "검사 중인 단락 강조."
+  "검사 중인 단락 강조." ; Face for highlighting currently checking region
   :group 'hanfix)
 
 (defface hanfix-face-error
   '((t :background "salmon" :foreground "white" :weight bold))
-  "오류 단어 강조."
+  "오류 단어 강조." ; Face for highlighting error word
   :group 'hanfix)
 
 (defface hanfix-face-buffer-section-header
   '((t :background "gray90" :extend t))
-  "Hanfix 버퍼 섹션 헤더."
+  "Hanfix 버퍼 섹션 헤더." ; Face for section header in *Hanfix* buffer
   :group 'hanfix)
 
 (defface hanfix-face-buffer-original-text
   '((t :foreground "red"))
-  "Hanfix 버퍼 원문."
+  "Hanfix 버퍼 원문." ; Face for original text in *Hanfix* buffer
   :group 'hanfix)
 
 (defface hanfix-face-buffer-suggestion-text
   '((t :foreground "forestgreen"))
-  "Hanfix 버퍼 수정 제안 텍스트."
+  "Hanfix 버퍼 수정 제안 텍스트." ; Face for suggested text in *Hanfix* buffer
   :group 'hanfix)
 
 ;;; --- Internal Utilities ---
 
 (defconst hanfix-buffer "*Hanfix*"
-  "Hanfix에서 사용할 버퍼 이름.")
+  "Hanfix에서 사용할 버퍼 이름.") ; Buffer name for Hanfix
 
 (defconst hanfix-korean-josa-list
   '(;; 3-chars
