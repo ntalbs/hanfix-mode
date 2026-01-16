@@ -142,7 +142,6 @@ detailed EXPLANATION."
       (insert (propertize " 수정 제안:\n" 'face '(:background "gray90" :extend t)))
       (insert "\n")
 
-
       (dotimes (i len)
         (insert (format "(%d) " (1+ i))
                 (propertize (aref suggestions i) 'face 'hanfix-face-buffer-suggestion-text)
@@ -198,11 +197,10 @@ detailed EXPLANATION."
      "\n\n텍스트: "
      text)))
 
-(defun hanfix--exec-gemini (text)
-  "Call Gemini API with the provided TEXT.
-Generate a prompt for TEXT with `hanfix--build-prompt',
-then parse the response, and return a vector of errors."
-  (let* ((model "gemini-3-flash-preview")
+(defun hanfix--send-request (text)
+  "Prepare request with provided TEXT and send it to Gemini.
+Returns the buffer containing the data from Gemini."
+  (let* ((model hanfix-gemini-model)
          (api-url (format "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" model))
          (url-request-method "POST")
          (url-request-extra-headers
@@ -213,7 +211,17 @@ then parse the response, and return a vector of errors."
                       (generationConfig . ((response_mime_type . "application/json"))))))
          (url-request-data (encode-coding-string json-str 'utf-8))
          (buffer (url-retrieve-synchronously api-url)))
+    buffer))
 
+(defun hanfix--send-request-dummy (_text)
+  "Prepare mock response from file."
+  (find-file-noselect "/Users/ntalbs/workspace/hanfix-mode/gemini-response.txt"))
+
+(defun hanfix--exec-gemini (text)
+  "Call Gemini API with the provided TEXT.
+Generate a prompt for TEXT with `hanfix--build-prompt',
+then parse the response, and return a vector of errors."
+  (let* ((buffer (hanfix--send-request text)))
     (if (not buffer)
         (error "API 호출 중 응답 버퍼를 생성하지 못했습니다")
       (with-current-buffer buffer
