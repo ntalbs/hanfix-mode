@@ -136,15 +136,20 @@
 
 (defun hanfix--check-executable ()
   "Check if hanfix executable path is valid."
-  (if (executable-find hanfix-executable-path)
-      t
-    (warn "hanfix 실행 파일을 찾을 수 없습니다. '%s' 경로를 확인하거나 CLI 도구를 설치하세요."
-          hanfix-executable-path)))
+  (if (not (executable-find hanfix-executable-path))
+      (progn
+        (warn "hanfix 실행 파일을 찾을 수 없습니다. '%s' 경로를 확인하거나 CLI 도구를 설치하세요."
+              hanfix-executable-path)
+        nil)
+    't))
 
 (defun hanfix--check-gemini-api-key ()
   "Check if the Gemini API key is set."
   (if (string-empty-p hanfix-gemini-api-key)
-      (warn "'M-x customize-group hanfix'에서 Gemini API 키를 설정하세요")))
+      (progn
+        (warn "'M-x customize-group hanfix'에서 Gemini API 키를 설정하세요")
+        nil)
+    't))
 
 (defun hanfix--split-korean-josa-word (word)
   "Split WORD into (stem . josa) or (word . nil)."
@@ -513,8 +518,11 @@ If no region is specified, check the current paragraph."
   :keymap hanfix-mode-map
   :group 'hanfix
   (when hanfix-mode
-    (or (hanfix--check-executable)
-        (hanfix--check-gemini-api-key))))
+    (let* ((exec (hanfix--check-executable))
+           (api-key (hanfix--check-gemini-api-key)))
+      (if (or exec api-key)
+          t
+        (error "Hanfix-mode를 사용하려면 hanfix 실행파일 또는 Gemini API key를 설정해야 합니다")))))
 
 (provide 'hanfix)
 
