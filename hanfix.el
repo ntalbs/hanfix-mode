@@ -23,6 +23,19 @@
   "한국어 맞춤법 검사기 hanfix 설정." ; Korean grammar checker hanfix config
   :group 'editing)
 
+(defcustom hanfix-default-exec-mode 'hanfix
+  "Hanfix 기본 실행 모드.
+- `hanfix' : hanfix 실행 파일(다음 맞춤법 검사기 호출) 이용.
+- `gemini' : Google Gemini 이용." ; Default exec mode for hanfix
+  :type '(choice (const :tag "hanfix 실행파일 사용" hanfix)
+                 (const :tag "Google Gemini 사용" gemini))
+  :group 'hanfix)
+
+(defcustom hanfix-executable-path "hanfix"
+  "Hanfix 실행 파일." ; File name of the hanfix executable.
+  :type 'string
+  :group 'hanfix)
+
 (defcustom hanfix-gemini-api-key ""
   "Gemini API 키 (https://aistudio.google.com/ 에서 발급)." ; Gemini API key
   :type 'string
@@ -36,7 +49,7 @@
                  (const :tag "Gemini 2.5 Flash-Lite" "gemini-2.5-flash-lite"))
   :group 'hanfix)
 
-(defcustom hanfix-max-length 3000
+(defcustom hanfix-max-length-gemini 3000
   "Gemini에 보낼 문자열 최대 길이." ; Maximum length of text to be sent to Gemini
   :type 'number
   :group 'hanfix)
@@ -76,7 +89,10 @@
 ;;; --- Internal Utilities ---
 
 (defconst hanfix-buffer "*Hanfix*"
-  "Hanfix에서 사용할 버퍼 이름.") ; Buffer name for Hanfix
+  "Buffer name for hanfix.")
+
+(defconst hanfix-max-length-hanfix 1000
+  "Maximum length of text when use hanfix.")
 
 (defconst hanfix-korean-josa-list
   '(;; 3-chars
@@ -91,10 +107,24 @@
     ":" ",")
   "List of Korean postpositions (Josa) for word stem extraction.")
 
+(defun hanfix-max-length ()
+  "Return maximum length of text based on the current mode."
+  (pcase hanfix-default-exec-mode
+   ('hanfix hanfix-max-length-hanfix)
+   ('genini hanfix-max-length-gemini)
+   (_ hanfix-max-length-hanfix)))
+
+(defun hanfix--check-executable ()
+  "Check if hanfix executable path is valid."
+  (if (executable-find hanfix-executable-path)
+      t
+    (warn "hanfix 실행 파일을 찾을 수 없습니다. '%s' 경로를 확인하거나 CLI 도구를 설치하세요."
+          hanfix-executable-path)))
+
 (defun hanfix--check-gemini-api-key ()
   "Check if the Gemini API key is set."
   (if (string-empty-p hanfix-gemini-api-key)
-      (error "'M-x customize-group hanfix'에서 Gemini API 키를 설정하세요")))
+      (warn "'M-x customize-group hanfix'에서 Gemini API 키를 설정하세요")))
 
 (defun hanfix--split-korean-josa-word (word)
   "Split WORD into (stem . josa) or (word . nil)."
@@ -182,6 +212,19 @@ detailed EXPLANATION."
       (delete-windows-on buf)
       (kill-buffer buf))))
 
+(defun hanfix--exec-hanfix-bin (text)
+  "Call hanfix executable with the provided TEXT.
+Return errors as JSON."
+  (let* ((json-raw (with-temp-buffer
+                     (insert text)
+                     (shell-command-on-region (point-min) (point-max) hanfix-executable-path nil t)
+                     (buffer-string)))
+         (json (condition-case nil
+                   (json-parse-string json-raw :object-type 'alist :array-type 'array)
+                 (error nil)))
+         (errors (cdr (assoc 'errors json))))
+    errors))
+
 (defun hanfix--build-prompt (text)
   "Create a prompt text for Gemini using the provided TEXT."
   (let ((ignored (if hanfix-ignore-words
@@ -252,6 +295,15 @@ then parse the response, and return a vector of errors."
                                                       :array-type 'array))
                        (errors (cdr (assoc 'errors parsed-res))))
                   errors)))))))))
+
+(defun hanfix--check-errors (text)
+  "Call actual grammar checker with TEXT and return errors.
+Call either `hanfix--exec-hanfix-bin' or `hanfix--exec-gemini'
+based on `hanfix-default-exec-mode'."
+  (pcase hanfix-default-exec-mode
+    ('hanfix (hanfix--exec-hanfix-bin text))
+    ('gemini (hanfix--exec-gemini text))
+    (_ (hanfix--exec-hanfix-bin text))))
 
 (defun hanfix--fix-errors (start end errors)
   "Iterate through the ERRORS within the region between START and END.
@@ -329,7 +381,7 @@ and decide how to handle the error through control buffer."
     (redisplay t)
     (unwind-protect
         (let* ((text (buffer-substring-no-properties start end))
-               (errors (hanfix--exec-gemini text)))
+               (errors (hanfix--check-errors text)))
           (if errors
               (when (hanfix--fix-errors start end errors)
                 (setq status 'quit))))
@@ -350,10 +402,10 @@ but not exceed `hanfix-max-length'"
                do
                (setq end-point (save-excursion (forward-paragraph) (point)))
 
-               if (> (- end-point start) hanfix-max-length)
+               if (> (- end-point start) (hanfix-max-length))
                    if (= start current-point)
                        return (save-excursion
-                                (goto-char (+ start hanfix-max-length))
+                                (goto-char (+ start (hanfix-max-length)))
                                 (backward-word)
                                 (cons start (min (point) end)))
                    else
@@ -441,7 +493,8 @@ If no region is specified, check the current paragraph."
   :keymap hanfix-mode-map
   :group 'hanfix
   (when hanfix-mode
-    (hanfix--check-gemini-api-key)))
+    (or (hanfix--check-executable)
+        (hanfix--check-gemini-api-key))))
 
 (provide 'hanfix)
 
