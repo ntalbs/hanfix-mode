@@ -279,8 +279,14 @@ Returns the buffer containing the data from Gemini."
                     `((contents . [((parts . [((text . ,(hanfix--build-prompt text)))]))])
                       (generationConfig . ((response_mime_type . "application/json"))))))
          (url-request-data (encode-coding-string json-str 'utf-8))
-         (buffer (url-retrieve-synchronously api-url)))
-    buffer))
+         (response (with-timeout (60 :timeout)
+                     (url-retrieve-synchronously api-url))))
+    (cond
+     ((eq response :timeout)
+      (error "Gemini 서버 응답이 너무 늦습니다.  다시 시도해 주세요"))
+     ((null response)
+      (error "네트워크 연결에 실패했습니다"))
+     (t response))))
 
 (defun hanfix--send-request-dummy (_text)
   "Prepare mock response from file."
@@ -299,11 +305,9 @@ then parse the response, and return a vector of errors."
 
         (goto-char (point-min))
 
-        ;; HTTP 응답 코드 확인 (200 OK 여부)
         (if (not (re-search-forward "^HTTP/[0-9.]+\\s-+200" nil t))
             (let ((resp-content (buffer-string)))
               (error "Gemini API 호출 실패 (HTTP Error): %s" resp-content))
-          ;; 본문 시작 위치로 이동
           (goto-char (point-min))
           (if (not (re-search-forward "^$" nil t))
               (error "API 응답 헤더와 본문을 분리할 수 없습니다")
