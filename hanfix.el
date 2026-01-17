@@ -271,9 +271,10 @@ Returns the buffer containing the data from Gemini."
   (let* ((model hanfix-gemini-model)
          (api-url (format "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" model))
          (url-request-method "POST")
+         (api-key (encode-coding-string hanfix-gemini-api-key 'utf-8))
          (url-request-extra-headers
           `(("Content-Type" . "application/json")
-            ("x-goog-api-key" . ,hanfix-gemini-api-key)))
+            ("x-goog-api-key" . ,api-key)))
          (json-str (json-encode
                     `((contents . [((parts . [((text . ,(hanfix--build-prompt text)))]))])
                       (generationConfig . ((response_mime_type . "application/json"))))))
