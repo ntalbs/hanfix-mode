@@ -55,4 +55,4 @@ however, it has slower response time and is subject to rate limits
 documentation](https://ai.google.dev/gemini-api/docs/rate-limits) for
 the details on these limits.
 
-![](https://github.com/ntalbs/hanfix-mode/blob/main/images/hanfix-check.png?raw=true)
+![](images/hanfix-check.png?raw=true)
