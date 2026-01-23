@@ -74,6 +74,11 @@
   :type 'number
   :group 'hanfix)
 
+(defcustom hanfix-gemini-api-timeout 60
+  "Gemeni API 타임아웃 (초)." ; Timeout for Gemini API in second
+  :type 'number
+  :group 'hanfix)
+
 (defcustom hanfix-ignore-words '()
   "맞춤법 검사 시 무시할 단어 목록." ; List of ignore words
   :type '(repeat string)
@@ -279,7 +284,7 @@ Returns the buffer containing the data from Gemini."
                     `((contents . [((parts . [((text . ,(hanfix--build-prompt text)))]))])
                       (generationConfig . ((response_mime_type . "application/json"))))))
          (url-request-data (encode-coding-string json-str 'utf-8))
-         (response (with-timeout (60 :timeout)
+         (response (with-timeout (hanfix-gemini-api-timeout :timeout)
                      (url-retrieve-synchronously api-url))))
     (cond
      ((eq response :timeout)
