@@ -74,7 +74,7 @@
   :type 'number
   :group 'hanfix)
 
-(defcustom hanfix-gemini-api-timeout 60
+(defcustom hanfix-gemini-api-timeout 180
   "Gemeni API 타임아웃 (초)." ; Timeout for Gemini API in second
   :type 'number
   :group 'hanfix)
