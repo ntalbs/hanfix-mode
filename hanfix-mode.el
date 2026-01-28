@@ -1,6 +1,6 @@
-;;; hanfix.el --- Gemini-based Korean grammar checker -*- lexical-binding: t; -*-
+;;; hanfix-mode.el --- Korean grammar checker -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Hanfix
+;; Copyright (C) 2026 ntalbs
 
 ;; Author: ntalbs <ntalbsen@gmail.com>
 ;; License: ISC
@@ -11,7 +11,7 @@
 
 ;;; Commentary:
 ;; This package provides a minor mode to check and correct Korean
-;; grammar and spelling using the Google Gemini API.
+;; grammar and spelling using Daum Spell Checker and Google Gemini API.
 
 ;;; License:
 ;; ISC License Copyright (c) 2004-2010 by Internet Systems Consortium, Inc.
