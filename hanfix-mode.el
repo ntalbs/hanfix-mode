@@ -534,6 +534,6 @@ If no region is specified, check the current paragraph."
           t
         (error "Hanfix-mode를 사용하려면 hanfix 실행파일 또는 Gemini API key를 설정해야 합니다")))))
 
-(provide 'hanfix)
+(provide 'hanfix-mode)
 
-;;; hanfix.el ends here
+;;; hanfix-mode.el ends here
