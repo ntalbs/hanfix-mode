@@ -512,13 +512,7 @@ If no region is specified, check the current paragraph."
   (interactive)
   (hanfix--run-loop (point)))
 
-(defvar hanfix-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c h c") 'hanfix-check-region)
-    (define-key map (kbd "C-c h a") 'hanfix-check-all)
-    (define-key map (kbd "C-c h h") 'hanfix-check-from-here)
-    (define-key map (kbd "C-c h o") 'hanfix-highlight-region)
-    map)
+(defvar hanfix-mode-map (make-sparse-keymap)
   "Keymap for `hanfix-mode'.")
 
 ;;;###autoload
