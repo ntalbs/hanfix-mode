@@ -259,7 +259,7 @@ Return errors as JSON."
   "Create a prompt text for Gemini using the provided TEXT."
   (let ((ignored (if hanfix-ignore-words
                      (concat "\n단, 다음 단어들은 사용자가 의도한 것이므로 절대 수정하지 마세요!: "
-                             (mapconcat 'identity hanfix-ignore-words ", ")))))
+                             (mapconcat #'identity hanfix-ignore-words ", ")))))
     (concat
      "당신은 한국어 맞춤법 및 문법 교정 전문가입니다."
      "아래 제공된 텍스트의 오류를 찾아 교정안을 제시하세요."
