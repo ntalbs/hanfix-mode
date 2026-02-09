@@ -1,6 +1,8 @@
 # Hanfix-mode
 
-## 한국어 (Korean)
+[![MELPA](https://melpa.org/packages/hanfix-mode-badge.svg)](https://melpa.org/#/hanfix-mode)
+
+## 한국어
 Hanfix-mode는 한국어 문법 및 철자법 확인을 지원하는 Emacs 마이너
 모드입니다. 내부적으로는 [hanfix](https://github.com/ntalbs/hanfix)
 명령을 사용하거나 구글 제미니를
